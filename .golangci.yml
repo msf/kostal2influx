@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - goimports
+    - stylecheck
+    - lll
+  disable:
+    - errcheck
+
+issues:
+  exclude-rules:
+    - linters:
+        - lll
+      source: "// nolint:lll"

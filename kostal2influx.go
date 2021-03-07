@@ -30,21 +30,21 @@ type Root struct {
 		NetBiosName       string `xml:"NetBiosName,attr"`
 		WebPortal         string `xml:"WebPortal,attr"`
 		ManufacturerURL   string `xml:"ManufacturerURL,attr"`
-		IpAddress         string `xml:"IpAddress,attr"`
+		IPAddress         string `xml:"IpAddress,attr"`
 		DateTime          string `xml:"DateTime,attr"`
 		MilliSeconds      string `xml:"MilliSeconds,attr"`
 		Measurements      struct {
 			Measurement []struct {
-				Value *float64 `xml:"Value,attr"`
-				Unit  string   `xml:"Unit,attr"`
-				Type  string   `xml:"Type,attr"`
+				Value float64 `xml:"Value,attr"`
+				Unit  string  `xml:"Unit,attr"`
+				Type  string  `xml:"Type,attr"`
 			} `xml:"Measurement"`
 		} `xml:"Measurements"`
 	} `xml:"Device"`
 }
 
-func getMeasurements(kostal_host string) (*Root, error) {
-	resp, err := http.Get("http://" + kostal_host + "/measurements.xml")
+func getMeasurements(kostalHost string) (*Root, error) {
+	resp, err := http.Get("http://" + kostalHost + "/measurements.xml")
 	if err != nil {
 		return nil, err
 	}
@@ -61,6 +61,30 @@ func parseMeasurementsXML(data []byte) (*Root, error) {
 	var root Root
 	err := xml.Unmarshal(data, &root)
 	return &root, err
+}
+
+type kostalPower struct {
+	gridConsumed float64
+	gridInjected float64
+	ownConsumed  float64
+}
+
+func (k kostalPower) Total() float64 {
+	if k.gridConsumed > 0 {
+		return k.gridConsumed + k.ownConsumed
+	}
+	return k.ownConsumed + k.gridInjected
+}
+
+func (k kostalPower) Error() error {
+	if k.ownConsumed < 0 || k.gridInjected < 0 || k.gridConsumed < 0 {
+		return fmt.Errorf("%+v invalid, power cannot be negative", k)
+	}
+	if (k.gridInjected == 0 && k.gridConsumed == 0) ||
+		(k.gridInjected > 0 && k.gridConsumed > 0) {
+		return fmt.Errorf("%+v inconsistent, either we are injecting power from the grid or consuming from the grid", k)
+	}
+	return nil
 }
 
 func main() {
@@ -82,6 +106,7 @@ func main() {
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+	logger.Log("kostalHost", kostalHost, "influxHost", influxHost, "sleepSecs", sleepSecs)
 
 	client := influxdb2.NewClient("http://"+influxHost+":8086", influxToken)
 	defer client.Close()
@@ -106,22 +131,42 @@ func main() {
 		}
 		logger.Log("measurement", "ok", "time", now, "device_time", stats.Device.DateTime)
 
-		p := influxdb2.NewPointWithMeasurement("kostal_inverter_raw").
+		var power kostalPower
+		p := influxdb2.NewPointWithMeasurement("kostal_inverter_0").
 			AddTag("DeviceName", stats.Device.Name).
-			AddTag("OEMSerial", stats.Device.OEMSerial).
 			SetTime(now)
-		for i, m := range stats.Device.Measurements.Measurement {
-			if m.Value == nil {
-				logger.Log("Measurement", m.Type, "error", "missing m.Value")
-				continue
-			}
+		for _, m := range stats.Device.Measurements.Measurement {
 			name := fmt.Sprintf("%s_%s", m.Type, m.Unit)
-			logger.Log("Measurement", i, name, m.Value)
 			p = p.AddField(name, m.Value)
+
+			switch m.Type {
+			case "OwnConsumedPower":
+				power.ownConsumed = m.Value
+			case "GridConsumedPower":
+				power.gridConsumed = m.Value
+			case "GridInjectedPower":
+				power.gridInjected = m.Value
+			}
 		}
 		writeAPI.WritePoint(p)
 
-		// TODO: write another point with refined metrics created by me
+		logger.Log("total", power.Total(),
+			"ownConsumed", power.ownConsumed,
+			"gridConsumed", power.gridConsumed,
+			"gridInjected", power.gridInjected,
+			"err", power.Error(),
+		)
+		if power.Error() == nil {
+			p := influxdb2.NewPointWithMeasurement("kostal_inverter_msf").
+				AddTag("DeviceName", stats.Device.Name).
+				SetTime(now).
+				AddField("TotalPower_W", power.Total()).
+				AddField("OwnConsumed_W", power.ownConsumed).
+				AddField("GridConsumed_W", power.gridConsumed).
+				AddField("GridInjected_W", power.gridInjected)
+			writeAPI.WritePoint(p)
+		}
+
 		writeAPI.Flush()
 	}
 }

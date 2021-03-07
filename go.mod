@@ -1,4 +1,4 @@
-module kostal2influx
+module github.com/msf/kostal2influx
 
 go 1.15
 

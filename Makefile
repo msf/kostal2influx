@@ -5,7 +5,8 @@ test:
 	go test -timeout=10s -race -benchmem ./...
 
 build:
-	go build ./...
+	# static build for alpine
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" ./...
 
 lint: bin/golangci-lint
 	go fmt ./...
@@ -19,23 +20,5 @@ setup: bin/golangci-lint
 	go mod download
 
 image-build:
-	docker build -t sidecar .
+	docker build -t kostal2influx .
 
-image-push: image-build
-	docker image tag sidecar:latest localhost:32000/sidecar
-	docker push localhost:32000/sidecar
-
-deploy: image-push
-	kubectl rollout restart deployment sender
-	kubectl rollout restart deployment pt-en
-	kubectl rollout restart deployment en-pt
-	kubectl rollout restart deployment en-es
-
-latency-test-web:
-	hey -c 2 -z 80s http://10.152.183.73:8080/web
-	hey -c 1 -z 80s http://10.152.183.73:8080/web
-
-latency-test-queue:
-	hey -c 2 -z 80s http://10.152.183.73:8080/queue
-	sleep 40
-	hey -c 1 -z 80s http://10.152.183.73:8080/queue

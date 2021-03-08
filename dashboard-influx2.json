@@ -1,0 +1,577 @@
+{
+ "meta": {
+  "version": "1",
+  "type": "dashboard",
+  "name": "Alfeizerao-Template",
+  "description": "template created from dashboard: Alfeizerao"
+ },
+ "content": {
+  "data": {
+   "type": "dashboard",
+   "attributes": {
+    "name": "Alfeizerao",
+    "description": ""
+   },
+   "relationships": {
+    "label": {
+     "data": []
+    },
+    "cell": {
+     "data": [
+      {
+       "type": "cell",
+       "id": "072fd135e4a89000"
+      },
+      {
+       "type": "cell",
+       "id": "072fd14f4fe89000"
+      },
+      {
+       "type": "cell",
+       "id": "072fd22f50a89000"
+      },
+      {
+       "type": "cell",
+       "id": "072fd232b7e89000"
+      }
+     ]
+    },
+    "variable": {
+     "data": [
+      {
+       "type": "variable",
+       "id": "06f86c0f13a8f000"
+      }
+     ]
+    }
+   }
+  },
+  "included": [
+   {
+    "id": "072fd135e4a89000",
+    "type": "cell",
+    "attributes": {
+     "x": 0,
+     "y": 10,
+     "w": 12,
+     "h": 5
+    },
+    "relationships": {
+     "view": {
+      "data": {
+       "type": "view",
+       "id": "072fd135e4a89000"
+      }
+     }
+    }
+   },
+   {
+    "id": "072fd14f4fe89000",
+    "type": "cell",
+    "attributes": {
+     "x": 0,
+     "y": 5,
+     "w": 6,
+     "h": 5
+    },
+    "relationships": {
+     "view": {
+      "data": {
+       "type": "view",
+       "id": "072fd14f4fe89000"
+      }
+     }
+    }
+   },
+   {
+    "id": "072fd22f50a89000",
+    "type": "cell",
+    "attributes": {
+     "x": 0,
+     "y": 0,
+     "w": 12,
+     "h": 5
+    },
+    "relationships": {
+     "view": {
+      "data": {
+       "type": "view",
+       "id": "072fd22f50a89000"
+      }
+     }
+    }
+   },
+   {
+    "id": "072fd232b7e89000",
+    "type": "cell",
+    "attributes": {
+     "x": 6,
+     "y": 5,
+     "w": 6,
+     "h": 5
+    },
+    "relationships": {
+     "view": {
+      "data": {
+       "type": "view",
+       "id": "072fd232b7e89000"
+      }
+     }
+    }
+   },
+   {
+    "type": "view",
+    "id": "072fd135e4a89000",
+    "attributes": {
+     "name": "Kostal 4.6-2 MP Plus (raw data)",
+     "properties": {
+      "shape": "chronograf-v2",
+      "queries": [
+       {
+        "text": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"kostal_inverter_raw\")\n  |> filter(fn: (r) => r[\"DeviceName\"] == \"PIKO 4.6-2 MP plus\")\n  |> filter(fn: (r) => r[\"_field\"] == \"OwnConsumedPower_W\" or r[\"_field\"] == \"GridInjectedPower_W\" or r[\"_field\"] == \"GridConsumedPower_W\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+        "editMode": "advanced",
+        "name": "",
+        "builderConfig": {
+         "buckets": [],
+         "tags": [
+          {
+           "key": "_measurement",
+           "values": [],
+           "aggregateFunctionType": "filter"
+          }
+         ],
+         "functions": [
+          {
+           "name": "mean"
+          }
+         ],
+         "aggregateWindow": {
+          "period": "auto",
+          "fillValues": false
+         }
+        }
+       }
+      ],
+      "axes": {
+       "x": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       },
+       "y": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       }
+      },
+      "type": "xy",
+      "legend": {},
+      "geom": "line",
+      "colors": [
+       {
+        "id": "d74ee731-cd14-4089-8288-09a20f5f9d40",
+        "type": "scale",
+        "hex": "#74D495",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "db284bfa-bbf3-400e-a619-aafa66e5aef0",
+        "type": "scale",
+        "hex": "#3F3FBA",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "3e9b0f00-2b0b-46ba-9395-84beca450d88",
+        "type": "scale",
+        "hex": "#FF4D9E",
+        "name": "Atlantis",
+        "value": 0
+       }
+      ],
+      "note": "",
+      "showNoteWhenEmpty": false,
+      "xColumn": "_time",
+      "generateXAxisTicks": null,
+      "xTotalTicks": 0,
+      "xTickStart": 0,
+      "xTickStep": 0,
+      "yColumn": "_value",
+      "generateYAxisTicks": null,
+      "yTotalTicks": 0,
+      "yTickStart": 0,
+      "yTickStep": 0,
+      "shadeBelow": true,
+      "position": "overlaid",
+      "timeFormat": "",
+      "hoverDimension": "",
+      "legendColorizeRows": false,
+      "legendOpacity": 0,
+      "legendOrientationThreshold": 0
+     }
+    }
+   },
+   {
+    "type": "view",
+    "id": "072fd14f4fe89000",
+    "attributes": {
+     "name": "Alfeizerao Total Power Consumption + Generation",
+     "properties": {
+      "shape": "chronograf-v2",
+      "queries": [
+       {
+        "text": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"kostal_inverter_msf\")\n  |> filter(fn: (r) => r[\"DeviceName\"] == \"PIKO 4.6-2 MP plus\")\n  |> filter(fn: (r) => r[\"_field\"] == \"TotalPower_W\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+        "editMode": "advanced",
+        "name": "",
+        "builderConfig": {
+         "buckets": [],
+         "tags": [
+          {
+           "key": "_measurement",
+           "values": [],
+           "aggregateFunctionType": "filter"
+          }
+         ],
+         "functions": [
+          {
+           "name": "mean"
+          }
+         ],
+         "aggregateWindow": {
+          "period": "auto",
+          "fillValues": false
+         }
+        }
+       }
+      ],
+      "axes": {
+       "x": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       },
+       "y": {
+        "bounds": [
+         "0",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       }
+      },
+      "type": "line-plus-single-stat",
+      "legend": {},
+      "colors": [
+       {
+        "id": "d74ee731-cd14-4089-8288-09a20f5f9d40",
+        "type": "scale",
+        "hex": "#74D495",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "db284bfa-bbf3-400e-a619-aafa66e5aef0",
+        "type": "scale",
+        "hex": "#3F3FBA",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "3e9b0f00-2b0b-46ba-9395-84beca450d88",
+        "type": "scale",
+        "hex": "#FF4D9E",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "base",
+        "type": "text",
+        "hex": "#4591ED",
+        "name": "ocean",
+        "value": 0
+       }
+      ],
+      "prefix": "",
+      "suffix": "",
+      "decimalPlaces": {
+       "isEnforced": true,
+       "digits": 0
+      },
+      "note": "",
+      "showNoteWhenEmpty": false,
+      "xColumn": "_time",
+      "generateXAxisTicks": null,
+      "xTotalTicks": 0,
+      "xTickStart": 0,
+      "xTickStep": 0,
+      "yColumn": "_value",
+      "generateYAxisTicks": null,
+      "yTotalTicks": 0,
+      "yTickStart": 0,
+      "yTickStep": 0,
+      "shadeBelow": true,
+      "position": "overlaid",
+      "timeFormat": "",
+      "hoverDimension": "",
+      "legendColorizeRows": false,
+      "legendOpacity": 0,
+      "legendOrientationThreshold": 0
+     }
+    }
+   },
+   {
+    "type": "view",
+    "id": "072fd22f50a89000",
+    "attributes": {
+     "name": "Alfeizerao Power Consumption/Generation",
+     "properties": {
+      "shape": "chronograf-v2",
+      "queries": [
+       {
+        "text": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"kostal_inverter_msf\" or r[\"_measurement\"] == \"kostal_inverter_raw\")\n  |> filter(fn: (r) => r[\"DeviceName\"] == \"PIKO 4.6-2 MP plus\")\n  |> filter(fn: (r) => r[\"_field\"] == \"TotalPower_W\" or r[\"_field\"] == \"OwnConsumed_W\" or r[\"_field\"] == \"GridInjected_W\" or r[\"_field\"] == \"GridConsumed_W\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+        "editMode": "advanced",
+        "name": "",
+        "builderConfig": {
+         "buckets": [],
+         "tags": [
+          {
+           "key": "_measurement",
+           "values": [],
+           "aggregateFunctionType": "filter"
+          }
+         ],
+         "functions": [
+          {
+           "name": "mean"
+          }
+         ],
+         "aggregateWindow": {
+          "period": "auto",
+          "fillValues": false
+         }
+        }
+       }
+      ],
+      "axes": {
+       "x": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       },
+       "y": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       }
+      },
+      "type": "xy",
+      "legend": {},
+      "geom": "line",
+      "colors": [
+       {
+        "id": "6b997269-e319-4122-8228-622ecb96e11d",
+        "type": "scale",
+        "hex": "#31C0F6",
+        "name": "Nineteen Eighty Four",
+        "value": 0
+       },
+       {
+        "id": "8f760684-ddd7-4276-aa5d-0ed53cfa3a1c",
+        "type": "scale",
+        "hex": "#A500A5",
+        "name": "Nineteen Eighty Four",
+        "value": 0
+       },
+       {
+        "id": "791fe30f-4a95-4cdc-b371-3af753471c8f",
+        "type": "scale",
+        "hex": "#FF7E27",
+        "name": "Nineteen Eighty Four",
+        "value": 0
+       }
+      ],
+      "note": "",
+      "showNoteWhenEmpty": false,
+      "xColumn": "_time",
+      "generateXAxisTicks": null,
+      "xTotalTicks": 0,
+      "xTickStart": 0,
+      "xTickStep": 0,
+      "yColumn": "_value",
+      "generateYAxisTicks": null,
+      "yTotalTicks": 0,
+      "yTickStart": 0,
+      "yTickStep": 0,
+      "shadeBelow": true,
+      "position": "overlaid",
+      "timeFormat": "",
+      "hoverDimension": "",
+      "legendColorizeRows": false,
+      "legendOpacity": 0,
+      "legendOrientationThreshold": 0
+     }
+    }
+   },
+   {
+    "type": "view",
+    "id": "072fd232b7e89000",
+    "attributes": {
+     "name": "Alfeizerao Power Generation",
+     "properties": {
+      "shape": "chronograf-v2",
+      "queries": [
+       {
+        "text": "from(bucket: v.bucket)\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r[\"_measurement\"] == \"kostal_inverter_msf\")\n  |> filter(fn: (r) => r[\"DeviceName\"] == \"PIKO 4.6-2 MP plus\")\n  |> filter(fn: (r) => r[\"_field\"] == \"OwnConsumed_W\" or r[\"_field\"] == \"GridInjected_W\")\n  |> aggregateWindow(every: v.windowPeriod, fn: mean, createEmpty: false)\n  |> yield(name: \"mean\")",
+        "editMode": "advanced",
+        "name": "",
+        "builderConfig": {
+         "buckets": [],
+         "tags": [
+          {
+           "key": "_measurement",
+           "values": [],
+           "aggregateFunctionType": "filter"
+          }
+         ],
+         "functions": [
+          {
+           "name": "mean"
+          }
+         ],
+         "aggregateWindow": {
+          "period": "auto",
+          "fillValues": false
+         }
+        }
+       }
+      ],
+      "axes": {
+       "x": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       },
+       "y": {
+        "bounds": [
+         "",
+         ""
+        ],
+        "label": "",
+        "prefix": "",
+        "suffix": "",
+        "base": "10",
+        "scale": "linear"
+       }
+      },
+      "type": "xy",
+      "legend": {},
+      "geom": "line",
+      "colors": [
+       {
+        "id": "e5a427de-1e24-4b9b-918c-da349ed998a2",
+        "type": "scale",
+        "hex": "#74D495",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "f6bf041b-db71-4204-80e2-71954e302657",
+        "type": "scale",
+        "hex": "#3F3FBA",
+        "name": "Atlantis",
+        "value": 0
+       },
+       {
+        "id": "8291133f-d818-4104-aa29-c87c1bfd80b5",
+        "type": "scale",
+        "hex": "#FF4D9E",
+        "name": "Atlantis",
+        "value": 0
+       }
+      ],
+      "note": "",
+      "showNoteWhenEmpty": false,
+      "xColumn": "_time",
+      "generateXAxisTicks": null,
+      "xTotalTicks": 0,
+      "xTickStart": 0,
+      "xTickStep": 0,
+      "yColumn": "_value",
+      "generateYAxisTicks": null,
+      "yTotalTicks": 0,
+      "yTickStart": 0,
+      "yTickStep": 0,
+      "shadeBelow": true,
+      "position": "stacked",
+      "timeFormat": "",
+      "hoverDimension": "auto",
+      "legendColorizeRows": false,
+      "legendOpacity": 0,
+      "legendOrientationThreshold": 0
+     }
+    }
+   },
+   {
+    "id": "06f86c0f13a8f000",
+    "type": "variable",
+    "attributes": {
+     "name": "bucket",
+     "arguments": {
+      "type": "query",
+      "values": {
+       "query": "buckets()\n  |> filter(fn: (r) => r.name !~ /^_/)\n  |> rename(columns: {name: \"_value\"})\n  |> keep(columns: [\"_value\"])\n",
+       "language": "flux"
+      }
+     },
+     "selected": null
+    },
+    "relationships": {
+     "label": {
+      "data": []
+     }
+    }
+   }
+  ]
+ },
+ "labels": []
+}

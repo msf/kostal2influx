@@ -24,4 +24,4 @@ WORKDIR /app
 COPY --from=build-stage /app/kostal2influx  /app/
 RUN chmod +x /app/
 
-CMD ["/app/sender"]
+CMD ["/app/kostal2influx"]

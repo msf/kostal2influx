@@ -14,11 +14,10 @@ lint: bin/golangci-lint
 	bin/golangci-lint -c .golangci.yml run ./...
 
 bin/golangci-lint:
-	wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.34.1
+	wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.42.0
 
 setup: bin/golangci-lint
 	go mod download
 
 image-build:
 	docker build -t kostal2influx .
-

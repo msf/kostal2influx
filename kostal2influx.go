@@ -3,18 +3,20 @@ package main
 import (
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/namsral/flag"
 )
 
-const rawMetricName = "kostal_inverter_raw"
-const msfMetricName = "kostal_inverter_msf"
+const (
+	rawMetricName = "kostal_inverter_raw"
+	msfMetricName = "kostal_inverter_msf"
+)
 
 type Root struct {
 	XMLName xml.Name `xml:"root"`
@@ -52,7 +54,7 @@ func getMeasurements(kostalHost string) (*Root, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

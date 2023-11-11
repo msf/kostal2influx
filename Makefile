@@ -14,7 +14,7 @@ lint: bin/golangci-lint
 	bin/golangci-lint -c .golangci.yml run ./...
 
 bin/golangci-lint:
-	wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.42.0
+	wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.55.2
 
 setup: bin/golangci-lint
 	go mod download

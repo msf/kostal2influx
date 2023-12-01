@@ -1,8 +1,7 @@
 all: lint test build
 
-test:
-	go mod tidy
-	go test -timeout=10s -race -benchmem ./...
+test: lint
+	go test -timeout=10s -cover -race -bench=. -benchmem ./...
 
 build:
 	# static build for alpine
@@ -12,9 +11,10 @@ lint: bin/golangci-lint
 	go fmt ./...
 	go vet ./...
 	bin/golangci-lint -c .golangci.yml run ./...
+	go mod tidy
 
-bin/golangci-lint:
-	wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.55.2
+bin/golangci-lint: bin
+	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
 
 setup: bin/golangci-lint
 	go mod download

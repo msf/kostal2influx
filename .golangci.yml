@@ -1,8 +1,4 @@
 linters:
-  enable:
-    - goimports
-    - stylecheck
-    - lll
   disable:
     - errcheck
 

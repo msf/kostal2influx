@@ -14,7 +14,7 @@ lint: bin/golangci-lint
 	go mod tidy
 
 bin/golangci-lint: bin
-	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.55.2
+	GOBIN=$(PWD)/bin go install github.com/golangci/golangci-lint/cmd/golangci-lint@v2.1.4
 
 setup: bin/golangci-lint
 	go mod download

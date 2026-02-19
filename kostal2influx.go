@@ -93,7 +93,6 @@ func (k kostalPower) Error() error {
 }
 
 func main() {
-	const defaultToken = "YOUR_INFLUX_TOKEN_HERE"
 	const defaultBucket = "alfeizerao"
 	const org = "casa"
 	var (
@@ -105,10 +104,26 @@ func main() {
 	)
 	flag.StringVar(&kostalHost, "kostalHost", "192.168.0.11", "hostname or IP of kostal inversor")
 	flag.StringVar(&influxHost, "influxHost", "hopper-tail", "hostname of influxdb v2 server")
-	flag.StringVar(&influxToken, "influxToken", defaultToken, "influxdb v2 token")
+	flag.StringVar(&influxToken, "influxToken", "", "influxdb v2 token (or use INFLUX_TOKEN env)")
 	flag.StringVar(&influxBucket, "influxBucket", defaultBucket, "influxdb v2 bucket")
 	flag.IntVar(&sleepSecs, "sleep_secs", 5, "sleep time")
 	flag.Parse()
+
+	// Environment variables take precedence over flags
+	if token := os.Getenv("INFLUX_TOKEN"); token != "" {
+		influxToken = token
+	}
+	if host := os.Getenv("INFLUX_HOST"); host != "" {
+		influxHost = host
+	}
+	if bucket := os.Getenv("INFLUX_BUCKET"); bucket != "" {
+		influxBucket = bucket
+	}
+
+	if influxToken == "" {
+		fmt.Fprintf(os.Stderr, "Error: InfluxDB token required. Set INFLUX_TOKEN env var or --influxToken flag\n")
+		os.Exit(1)
+	}
 
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)

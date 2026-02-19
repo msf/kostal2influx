@@ -93,7 +93,7 @@ func (k kostalPower) Error() error {
 }
 
 func main() {
-	const defaultToken = "6fm31K9UVWC2o0oADBWg_broHVpdV9egDoj51mMGy-pYvRNAPBB475qjWRTb-8N66mTOsXbeQcM8YVvzwxrLNw=="
+	const defaultToken = "YOUR_INFLUX_TOKEN_HERE"
 	const defaultBucket = "alfeizerao"
 	const org = "casa"
 	var (

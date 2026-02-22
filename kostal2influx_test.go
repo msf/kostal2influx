@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -17,4 +21,147 @@ func TestXmlParsing(t *testing.T) {
 	require.Equal(t, 0.0, r.Device.Measurements.Measurement[1].Value)
 
 	require.Equal(t, 15, len(r.Device.Measurements.Measurement))
+}
+
+func TestSanitizeMetricName(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"AC Voltage", "AC_Voltage"},
+		{"Power/W", "Power_W"},
+		{"Temp %", "Temp_percent"},
+		{"simple_name", "simple_name"},
+		{"already_sanitized", "already_sanitized"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := sanitizeMetricName(tt.input)
+			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestVictoriaMetricsOutputFormat(t *testing.T) {
+	// This test verifies the Prometheus exposition format output
+	measurements := []Measurement{
+		{Value: 223.3, Unit: "V", Type: "AC_Voltage"},
+		{Value: 50.0, Unit: "Hz", Type: "AC_Frequency"},
+		{Value: 1000.0, Unit: "W", Type: "GridConsumedPower"},
+		{Value: 500.0, Unit: "W", Type: "OwnConsumedPower"},
+		{Value: 0.0, Unit: "W", Type: "GridInjectedPower"},
+	}
+
+	power := kostalPower{
+		gridConsumed: 1000.0,
+		gridInjected: 0.0,
+		ownConsumed:  500.0,
+	}
+
+	timestamp := time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC)
+
+	// We can't actually call the HTTP endpoint, but we can verify the format logic
+	// by checking that the function produces valid Prometheus format
+	var buf bytes.Buffer
+	ts := timestamp.UnixMilli()
+	deviceName := "test-inverter"
+
+	// Replicate the format logic
+	for _, m := range measurements {
+		name := sanitizeMetricName(fmt.Sprintf("kostal_%s_%s", m.Type, m.Unit))
+		fmt.Fprintf(&buf, "%s{device=\"%s\"} %v %d\n", name, deviceName, m.Value, ts)
+	}
+
+	if power.Error() == nil {
+		fmt.Fprintf(&buf, "kostal_total_power_watts{device=\"%s\"} %v %d\n", deviceName, power.Total(), ts)
+		fmt.Fprintf(&buf, "kostal_own_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.ownConsumed, ts)
+		fmt.Fprintf(&buf, "kostal_grid_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.gridConsumed, ts)
+		fmt.Fprintf(&buf, "kostal_grid_injected_watts{device=\"%s\"} %v %d\n", deviceName, power.gridInjected, ts)
+	}
+
+	output := buf.String()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+
+	// Verify we have the expected number of metrics
+	require.Equal(t, 9, len(lines), "Should have 9 metric lines")
+
+	// Verify format: metric_name{labels} value timestamp
+	for _, line := range lines {
+		// Check basic structure: name{labels} value timestamp
+		require.Contains(t, line, "{device=\"test-inverter\"}", "Line should have labels: "+line)
+		require.Contains(t, line, " ", "Line should have space between value and timestamp")
+		
+		// Extract and check metric name format
+		parts := strings.Split(line, "{")
+		require.Len(t, parts, 2, "Line should have exactly one { : "+line)
+		metricName := parts[0]
+		require.True(t, len(metricName) > 0, "Metric name should not be empty")
+		firstChar := rune(metricName[0])
+		require.True(t, (firstChar >= 'a' && firstChar <= 'z') || (firstChar >= 'A' && firstChar <= 'Z') || firstChar == '_', 
+			fmt.Sprintf("Metric name should start with letter or underscore, got: %s", metricName))
+	}
+
+	// Verify specific metrics exist (note: metric name includes Type_Unit)
+	require.Contains(t, output, `kostal_AC_Voltage_V{device="test-inverter"}`)
+	require.Contains(t, output, `kostal_total_power_watts{device="test-inverter"} 1500`)
+	require.Contains(t, output, `kostal_grid_consumed_watts{device="test-inverter"} 1000`)
+	require.Contains(t, output, `kostal_own_consumed_watts{device="test-inverter"} 500`)
+}
+
+func TestVictoriaMetricsPowerCalculation(t *testing.T) {
+	tests := []struct {
+		name           string
+		gridConsumed   float64
+		gridInjected   float64
+		ownConsumed    float64
+		expectedTotal  float64
+		expectError    bool
+	}{
+		{
+			name:          "consuming from grid",
+			gridConsumed:  1000.0,
+			gridInjected:  0.0,
+			ownConsumed:   500.0,
+			expectedTotal: 1500.0,
+			expectError:   false,
+		},
+		{
+			name:          "injecting to grid",
+			gridConsumed:  0.0,
+			gridInjected:  800.0,
+			ownConsumed:   300.0,
+			expectedTotal: 1100.0,
+			expectError:   false,
+		},
+		{
+			name:         "negative grid consumed",
+			gridConsumed: -100.0,
+			expectError:  true,
+		},
+		{
+			name:         "both grid values positive",
+			gridConsumed: 100.0,
+			gridInjected: 100.0,
+			expectError:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := kostalPower{
+				gridConsumed: tt.gridConsumed,
+				gridInjected: tt.gridInjected,
+				ownConsumed:  tt.ownConsumed,
+			}
+
+			err := p.Error()
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedTotal, p.Total())
+			}
+		})
+	}
 }

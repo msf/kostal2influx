@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -94,36 +93,64 @@ func (k kostalPower) Error() error {
 	return nil
 }
 
-// writeToVictoriaMetrics writes metrics to VictoriaMetrics using Prometheus exposition format
-func writeToVictoriaMetrics(vmHost string, deviceName string, measurements []Measurement, power kostalPower, timestamp time.Time) error {
-	if vmHost == "" {
-		return nil
-	}
+// VMClient handles VictoriaMetrics push operations
+type VMClient struct {
+	client *http.Client
+	host   string
+}
 
-	var buf bytes.Buffer
-	ts := timestamp.UnixMilli()
+// NewVMClient creates a new VictoriaMetrics client
+func NewVMClient(host string) *VMClient {
+	return &VMClient{
+		client: &http.Client{Timeout: 30 * time.Second},
+		host:   host,
+	}
+}
+
+// Close closes the underlying HTTP client
+func (c *VMClient) Close() {
+	if c.client != nil {
+		c.client.CloseIdleConnections()
+	}
+}
+
+// buildPayload builds Prometheus exposition format metrics
+func (c *VMClient) buildPayload(deviceName string, measurements []Measurement, power kostalPower, ts int64) string {
+	var b strings.Builder
 
 	// Write raw measurements
 	for _, m := range measurements {
 		name := sanitizeMetricName(fmt.Sprintf("kostal_%s_%s", m.Type, m.Unit))
-		fmt.Fprintf(&buf, "%s{device=\"%s\"} %v %d\n", name, deviceName, m.Value, ts)
+		fmt.Fprintf(&b, "%s{device=\"%s\"} %v %d\n", name, deviceName, m.Value, ts)
 	}
 
 	// Write calculated power metrics
 	if power.Error() == nil {
-		fmt.Fprintf(&buf, "kostal_total_power_watts{device=\"%s\"} %v %d\n", deviceName, power.Total(), ts)
-		fmt.Fprintf(&buf, "kostal_own_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.ownConsumed, ts)
-		fmt.Fprintf(&buf, "kostal_grid_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.gridConsumed, ts)
-		fmt.Fprintf(&buf, "kostal_grid_injected_watts{device=\"%s\"} %v %d\n", deviceName, power.gridInjected, ts)
+		fmt.Fprintf(&b, "kostal_total_power_watts{device=\"%s\"} %v %d\n", deviceName, power.Total(), ts)
+		fmt.Fprintf(&b, "kostal_own_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.ownConsumed, ts)
+		fmt.Fprintf(&b, "kostal_grid_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.gridConsumed, ts)
+		fmt.Fprintf(&b, "kostal_grid_injected_watts{device=\"%s\"} %v %d\n", deviceName, power.gridInjected, ts)
 	}
 
-	req, err := http.NewRequest("POST", "http://"+vmHost+":8428/api/v1/import/prometheus", &buf)
+	return b.String()
+}
+
+// PostMetrics pushes metrics to VictoriaMetrics
+func (c *VMClient) PostMetrics(deviceName string, measurements []Measurement, power kostalPower, timestamp time.Time) error {
+	if c.host == "" {
+		return nil
+	}
+
+	ts := timestamp.UnixMilli()
+	payload := c.buildPayload(deviceName, measurements, power, ts)
+
+	req, err := http.NewRequest("POST", "http://"+c.host+":8428/api/v1/import/prometheus", strings.NewReader(payload))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "text/plain")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -211,6 +238,13 @@ func main() {
 		}
 	}()
 
+	// Initialize VictoriaMetrics client if configured
+	var vmClient *VMClient
+	if vmHost != "" {
+		vmClient = NewVMClient(vmHost)
+		defer vmClient.Close()
+	}
+
 	for {
 		time.Sleep(time.Duration(sleepSecs) * time.Second)
 
@@ -259,7 +293,7 @@ func main() {
 		}
 
 		// Double-write to VictoriaMetrics if configured
-		if vmHost != "" {
+		if vmClient != nil {
 			// Convert measurements to slice for VM
 			var measurements []Measurement
 			for _, m := range stats.Device.Measurements.Measurement {
@@ -269,12 +303,12 @@ func main() {
 					Type:  m.Type,
 				})
 			}
-			if err := writeToVictoriaMetrics(vmHost, stats.Device.Name, measurements, power, now); err != nil {
+			if err := vmClient.PostMetrics(stats.Device.Name, measurements, power, now); err != nil {
 				logger.Log("victoriametrics", "write error", "error", err.Error())
 			} else {
 				logger.Log("victoriametrics", "written")
-			}
-		}
+		}	}
+		
 
 		writeAPI.Flush()
 	}

@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -92,6 +94,64 @@ func (k kostalPower) Error() error {
 	return nil
 }
 
+// writeToVictoriaMetrics writes metrics to VictoriaMetrics using Prometheus exposition format
+func writeToVictoriaMetrics(vmHost string, deviceName string, measurements []Measurement, power kostalPower, timestamp time.Time) error {
+	if vmHost == "" {
+		return nil
+	}
+
+	var buf bytes.Buffer
+	ts := timestamp.UnixMilli()
+
+	// Write raw measurements
+	for _, m := range measurements {
+		name := sanitizeMetricName(fmt.Sprintf("kostal_%s_%s", m.Type, m.Unit))
+		fmt.Fprintf(&buf, "%s{device=\"%s\"} %v %d\n", name, deviceName, m.Value, ts)
+	}
+
+	// Write calculated power metrics
+	if power.Error() == nil {
+		fmt.Fprintf(&buf, "kostal_total_power_watts{device=\"%s\"} %v %d\n", deviceName, power.Total(), ts)
+		fmt.Fprintf(&buf, "kostal_own_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.ownConsumed, ts)
+		fmt.Fprintf(&buf, "kostal_grid_consumed_watts{device=\"%s\"} %v %d\n", deviceName, power.gridConsumed, ts)
+		fmt.Fprintf(&buf, "kostal_grid_injected_watts{device=\"%s\"} %v %d\n", deviceName, power.gridInjected, ts)
+	}
+
+	req, err := http.NewRequest("POST", "http://"+vmHost+":8428/api/v1/import/prometheus", &buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/plain")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("vm returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return nil
+}
+
+// sanitizeMetricName creates a Prometheus-compatible metric name
+func sanitizeMetricName(name string) string {
+	name = strings.ReplaceAll(name, " ", "_")
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "%", "percent")
+	return name
+}
+
+// Measurement holds a single measurement from the Kostal inverter
+type Measurement struct {
+	Value float64 `xml:"Value,attr"`
+	Unit  string  `xml:"Unit,attr"`
+	Type  string  `xml:"Type,attr"`
+}
+
 func main() {
 	const defaultBucket = "alfeizerao"
 	const org = "casa"
@@ -100,12 +160,14 @@ func main() {
 		influxHost   string
 		influxToken  string
 		influxBucket string
+		vmHost       string
 		sleepSecs    int
 	)
 	flag.StringVar(&kostalHost, "kostalHost", "192.168.0.11", "hostname or IP of kostal inversor")
 	flag.StringVar(&influxHost, "influxHost", "hopper-tail", "hostname of influxdb v2 server")
 	flag.StringVar(&influxToken, "influxToken", "", "influxdb v2 token (or use INFLUX_TOKEN env)")
 	flag.StringVar(&influxBucket, "influxBucket", defaultBucket, "influxdb v2 bucket")
+	flag.StringVar(&vmHost, "vmHost", "", "VictoriaMetrics host (e.g. localhost, for double-write)")
 	flag.IntVar(&sleepSecs, "sleep_secs", 5, "sleep time")
 	flag.Parse()
 
@@ -119,9 +181,12 @@ func main() {
 	if bucket := os.Getenv("INFLUX_BUCKET"); bucket != "" {
 		influxBucket = bucket
 	}
+	if host := os.Getenv("VM_HOST"); host != "" {
+		vmHost = host
+	}
 
-	if influxToken == "" {
-		fmt.Fprintf(os.Stderr, "Error: InfluxDB token required. Set INFLUX_TOKEN env var or --influxToken flag\n")
+	if influxToken == "" && vmHost == "" {
+		fmt.Fprintf(os.Stderr, "Error: Either InfluxDB token or VictoriaMetrics host required\n")
 		os.Exit(1)
 	}
 
@@ -130,6 +195,7 @@ func main() {
 	logger.Log("kostalHost", kostalHost,
 		"influxHost", influxHost,
 		"influxBucket", influxBucket,
+		"vmHost", vmHost,
 		"sleepSecs", sleepSecs,
 	)
 
@@ -190,6 +256,24 @@ func main() {
 				AddField("GridConsumed_W", power.gridConsumed).
 				AddField("GridInjected_W", power.gridInjected)
 			writeAPI.WritePoint(p)
+		}
+
+		// Double-write to VictoriaMetrics if configured
+		if vmHost != "" {
+			// Convert measurements to slice for VM
+			var measurements []Measurement
+			for _, m := range stats.Device.Measurements.Measurement {
+				measurements = append(measurements, Measurement{
+					Value: m.Value,
+					Unit:  m.Unit,
+					Type:  m.Type,
+				})
+			}
+			if err := writeToVictoriaMetrics(vmHost, stats.Device.Name, measurements, power, now); err != nil {
+				logger.Log("victoriametrics", "write error", "error", err.Error())
+			} else {
+				logger.Log("victoriametrics", "written")
+			}
 		}
 
 		writeAPI.Flush()

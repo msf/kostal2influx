@@ -5,12 +5,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/go-kit/log"
 )
 
 // vmConfig is the parsed command-line configuration for the VictoriaMetrics sink.
@@ -28,10 +27,10 @@ type vmClient struct {
 	token   string
 	retries int
 	http    *http.Client
-	log     log.Logger
+	logger  *slog.Logger
 }
 
-func newVMClient(cfg vmConfig, logger log.Logger) *vmClient {
+func newVMClient(cfg vmConfig, logger *slog.Logger) *vmClient {
 	port := cfg.port
 	if port == "" {
 		port = "8428"
@@ -41,7 +40,7 @@ func newVMClient(cfg vmConfig, logger log.Logger) *vmClient {
 		token:   cfg.token,
 		retries: cfg.retries,
 		http:    &http.Client{Timeout: cfg.timeout},
-		log:     logger,
+		logger:  logger,
 	}
 }
 
@@ -73,7 +72,7 @@ func (c *vmClient) PostMetrics(ctx context.Context, payload []byte) error {
 	var lastErr error
 	for attempt := 0; attempt <= c.retries; attempt++ {
 		if attempt > 0 {
-			c.log.Log("msg", "retrying victoriametrics write", "attempt", attempt)
+			c.logger.Warn("retrying victoriametrics write", "attempt", attempt)
 			select {
 			case <-ctx.Done():
 				return ctx.Err()

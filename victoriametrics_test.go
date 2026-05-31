@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,7 +70,7 @@ func TestPostMetrics(t *testing.T) {
 
 	hostPort := strings.TrimPrefix(srv.URL, "http://")
 	host, port, _ := strings.Cut(hostPort, ":")
-	c := newVMClient(vmConfig{host: host, port: port, token: "tok", timeout: 5 * time.Second}, log.NewNopLogger())
+	c := newVMClient(vmConfig{host: host, port: port, token: "tok", timeout: 5 * time.Second}, slog.New(slog.DiscardHandler))
 
 	err := c.PostMetrics(context.Background(), []byte("metric 1 2\n"))
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestPostMetricsRetriesThenFails(t *testing.T) {
 
 	hostPort := strings.TrimPrefix(srv.URL, "http://")
 	host, port, _ := strings.Cut(hostPort, ":")
-	c := newVMClient(vmConfig{host: host, port: port, retries: 1, timeout: time.Second}, log.NewNopLogger())
+	c := newVMClient(vmConfig{host: host, port: port, retries: 1, timeout: time.Second}, slog.New(slog.DiscardHandler))
 
 	err := c.PostMetrics(context.Background(), []byte("x 1 2\n"))
 	require.Error(t, err)

@@ -1,5 +1,6 @@
 # Binaries for programs and plugins
 /kostal2influx
+/bin/
 *.exe
 *.exe~
 *.dll

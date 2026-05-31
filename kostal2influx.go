@@ -5,13 +5,13 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/go-kit/log"
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
 	"github.com/influxdata/influxdb-client-go/v2/api"
 	"github.com/influxdata/influxdb-client-go/v2/api/write"
@@ -182,9 +182,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
-	logger.Log(
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	logger.Info("config",
 		"kostalHost", kostalHost,
 		"influxHost", influxHost,
 		"influxBucket", influxBucket,
@@ -202,7 +201,7 @@ func main() {
 		influxClient = client.WriteAPI(org, influxBucket)
 		go func() {
 			for err := range influxClient.Errors() {
-				logger.Log("influxdb", "influxClient", "error", err.Error())
+				logger.Error("influxdb write", "err", err)
 			}
 		}()
 	}
@@ -225,7 +224,7 @@ func main() {
 			if influxClient != nil {
 				influxClient.Flush()
 			}
-			logger.Log("msg", "shutdown complete")
+			logger.Info("shutdown complete")
 			return
 		case <-time.After(sleep):
 		}
@@ -233,14 +232,14 @@ func main() {
 		now := time.Now().UTC()
 		stats, err := getMeasurements(kostalHost)
 		if err != nil {
-			logger.Log("err", err, "method", "getMeasurements", "kostalHost", kostalHost)
+			logger.Error("getMeasurements", "err", err, "kostalHost", kostalHost)
 			continue
 		}
 
 		var power kostalPower
 		power.FromMeasurements(stats.Device.Measurements.Measurement)
-		logger.Log(
-			"measurement", "ok", "device_time", stats.Device.DateTime,
+		logger.Info("measurement",
+			"device_time", stats.Device.DateTime,
 			"total", power.Total(),
 			"ownConsumed", power.ownConsumed,
 			"gridConsumed", power.gridConsumed,
@@ -257,7 +256,7 @@ func main() {
 
 		if vmc != nil {
 			if err := vmc.PostMetrics(ctx, buildVMPayload(stats, power, now)); err != nil {
-				logger.Log("victoriametrics", "write error", "error", err.Error())
+				logger.Error("victoriametrics write", "err", err)
 			}
 		}
 	}

@@ -1,0 +1,118 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/go-kit/log"
+)
+
+// vmConfig is the parsed command-line configuration for the VictoriaMetrics sink.
+type vmConfig struct {
+	host    string
+	port    string
+	token   string
+	timeout time.Duration
+	retries int
+}
+
+// vmClient is a long-lived writer to a VictoriaMetrics import endpoint.
+type vmClient struct {
+	url     string
+	token   string
+	retries int
+	http    *http.Client
+	log     log.Logger
+}
+
+func newVMClient(cfg vmConfig, logger log.Logger) *vmClient {
+	port := cfg.port
+	if port == "" {
+		port = "8428"
+	}
+	return &vmClient{
+		url:     fmt.Sprintf("http://%s:%s/api/v1/import/prometheus", cfg.host, port),
+		token:   cfg.token,
+		retries: cfg.retries,
+		http:    &http.Client{Timeout: cfg.timeout},
+		log:     logger,
+	}
+}
+
+// buildVMPayload renders the readings as a Prometheus exposition payload: every
+// raw measurement, plus the derived power metrics when the reading is consistent.
+func buildVMPayload(stats *Root, power kostalPower, now time.Time) []byte {
+	var b bytes.Buffer
+	ts := now.UnixMilli()
+	device := stats.Device.Name
+
+	for _, m := range stats.Device.Measurements.Measurement {
+		name := sanitizeMetricName(fmt.Sprintf("kostal_%s_%s", m.Type, m.Unit))
+		fmt.Fprintf(&b, "%s{device=%q} %v %d\n", name, device, m.Value, ts)
+	}
+
+	if power.Error() == nil {
+		fmt.Fprintf(&b, "kostal_total_power_watts{device=%q} %v %d\n", device, power.Total(), ts)
+		fmt.Fprintf(&b, "kostal_own_consumed_watts{device=%q} %v %d\n", device, power.ownConsumed, ts)
+		fmt.Fprintf(&b, "kostal_grid_consumed_watts{device=%q} %v %d\n", device, power.gridConsumed, ts)
+		fmt.Fprintf(&b, "kostal_grid_injected_watts{device=%q} %v %d\n", device, power.gridInjected, ts)
+	}
+
+	return b.Bytes()
+}
+
+// PostMetrics submits a prebuilt payload, retrying with linear backoff. It drains
+// and closes each response body so the keep-alive connection can be reused.
+func (c *vmClient) PostMetrics(ctx context.Context, payload []byte) error {
+	var lastErr error
+	for attempt := 0; attempt <= c.retries; attempt++ {
+		if attempt > 0 {
+			c.log.Log("msg", "retrying victoriametrics write", "attempt", attempt)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(payload))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "text/plain")
+		if c.token != "" {
+			req.Header.Set("Authorization", "Bearer "+c.token)
+		}
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("vm status %d: %s", resp.StatusCode, body)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("victoriametrics write failed after %d attempts: %w", c.retries+1, lastErr)
+}
+
+var invalidMetricChars = regexp.MustCompile(`[^a-zA-Z0-9_:]`)
+
+// sanitizeMetricName maps a raw measurement name to a valid Prometheus metric name.
+func sanitizeMetricName(name string) string {
+	name = strings.ReplaceAll(name, "%", "percent")
+	name = strings.ReplaceAll(name, ".", "_")
+	name = invalidMetricChars.ReplaceAllString(name, "_")
+	name = strings.TrimLeft(name, "0123456789")
+	return name
+}

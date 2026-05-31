@@ -18,3 +18,21 @@ func TestXmlParsing(t *testing.T) {
 
 	require.Equal(t, 15, len(r.Device.Measurements.Measurement))
 }
+
+func TestKostalPower(t *testing.T) {
+	var p kostalPower
+	p.FromMeasurements([]Measurement{
+		{Value: 500, Unit: "W", Type: "OwnConsumedPower"},
+		{Value: 1000, Unit: "W", Type: "GridConsumedPower"},
+		{Value: 0, Unit: "W", Type: "GridInjectedPower"},
+		{Value: 223.3, Unit: "V", Type: "AC_Voltage"},
+	})
+	require.Equal(t, 500.0, p.ownConsumed)
+	require.Equal(t, 1000.0, p.gridConsumed)
+	require.NoError(t, p.Error())
+	require.Equal(t, 1500.0, p.Total())
+
+	require.Error(t, kostalPower{gridConsumed: -1}.Error())                     // negative
+	require.Error(t, kostalPower{gridConsumed: 100, gridInjected: 100}.Error()) // both directions
+	require.Error(t, kostalPower{}.Error())                                     // neither direction
+}

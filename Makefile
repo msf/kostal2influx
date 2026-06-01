@@ -7,8 +7,8 @@ test: lint
 	go test -timeout=10s -cover -race -bench=. -benchmem ./...
 
 build:
-	# static build for alpine
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" ./...
+	# static daemon binary for the container
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kostal2influx .
 
 # one-shot InfluxDB -> VictoriaMetrics history importer
 backfill: bin

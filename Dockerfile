@@ -20,7 +20,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=build-stage /app/kostal2influx  /app/
-RUN chmod +x /app/
+COPY --from=build-stage /app/kostal2influx /app/kostal2influx
 
-CMD ["/app/kostal2influx"]
+ENTRYPOINT ["/app/kostal2influx"]

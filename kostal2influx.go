@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -140,18 +141,20 @@ func main() {
 	const defaultBucket = "alfeizerao"
 	const org = "casa"
 	var (
-		kostalHost   string
-		influxHost   string
-		influxToken  string
-		influxBucket string
-		vmHost       string
-		vmPort       string
-		vmToken      string
-		vmTimeout    int
-		vmRetries    int
-		sleepSecs    int
+		kostalHost    string
+		influxEnabled bool
+		influxHost    string
+		influxToken   string
+		influxBucket  string
+		vmHost        string
+		vmPort        string
+		vmToken       string
+		vmTimeout     int
+		vmRetries     int
+		sleepSecs     int
 	)
 	flag.StringVar(&kostalHost, "kostalHost", "192.168.0.11", "hostname or IP of kostal inversor")
+	flag.BoolVar(&influxEnabled, "influx", false, "enable InfluxDB writes (disabled by default; or INFLUX_ENABLED env)")
 	flag.StringVar(&influxHost, "influxHost", "hopper-tail", "hostname of influxdb v2 server")
 	flag.StringVar(&influxToken, "influxToken", "", "influxdb v2 token (or use INFLUX_TOKEN env)")
 	flag.StringVar(&influxBucket, "influxBucket", defaultBucket, "influxdb v2 bucket")
@@ -176,26 +179,38 @@ func main() {
 			*dst = v
 		}
 	}
+	if v := os.Getenv("INFLUX_ENABLED"); v == "1" || strings.EqualFold(v, "true") {
+		influxEnabled = true
+	}
 
-	if influxToken == "" && vmHost == "" {
-		fmt.Fprintf(os.Stderr, "Error: need an InfluxDB token or a VictoriaMetrics host\n")
+	vmEnabled := vmHost != ""
+	if influxEnabled && influxToken == "" {
+		fmt.Fprintln(os.Stderr, "Error: InfluxDB enabled but no token (--influxToken or INFLUX_TOKEN)")
+		os.Exit(1)
+	}
+	if !influxEnabled && !vmEnabled {
+		fmt.Fprintln(os.Stderr, "Error: no write backend enabled (set --vmHost and/or --influx)")
 		os.Exit(1)
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	logger.Info("config",
-		"kostalHost", kostalHost,
-		"influxHost", influxHost,
-		"influxBucket", influxBucket,
-		"vmHost", vmHost,
-		"sleepSecs", sleepSecs,
-	)
+	logger.Info("starting", "kostalHost", kostalHost, "sleepSecs", sleepSecs)
+	if influxEnabled {
+		logger.Info("influxdb sink ENABLED", "host", influxHost, "bucket", influxBucket)
+	} else {
+		logger.Info("influxdb sink disabled")
+	}
+	if vmEnabled {
+		logger.Info("victoriametrics sink ENABLED", "host", vmHost, "port", vmPort)
+	} else {
+		logger.Info("victoriametrics sink disabled")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	var influxClient api.WriteAPI
-	if influxToken != "" {
+	if influxEnabled {
 		client := influxdb2.NewClient("http://"+influxHost+":8086", influxToken)
 		defer client.Close()
 		influxClient = client.WriteAPI(org, influxBucket)
@@ -207,7 +222,7 @@ func main() {
 	}
 
 	var vmc *vmClient
-	if vmHost != "" {
+	if vmEnabled {
 		vmc = newVMClient(vmConfig{
 			host:    vmHost,
 			port:    vmPort,

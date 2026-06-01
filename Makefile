@@ -1,3 +1,6 @@
+IMAGE   ?= ghcr.io/msf/kostal2influx
+VERSION ?= $(shell git describe --tags --always --dirty)
+
 all: lint test build
 
 test: lint
@@ -6,6 +9,10 @@ test: lint
 build:
 	# static build for alpine
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" ./...
+
+# one-shot InfluxDB -> VictoriaMetrics history importer
+backfill: bin
+	go build -o bin/backfill ./cmd/backfill
 
 lint: bin/golangci-lint
 	go fmt ./...
@@ -23,4 +30,8 @@ setup: bin/golangci-lint
 	go mod download
 
 image-build:
-	docker build -t kostal2influx .
+	docker build -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+
+image-push: image-build
+	docker push $(IMAGE):$(VERSION)
+	docker push $(IMAGE):latest

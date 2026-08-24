@@ -243,11 +243,16 @@ func main() {
 	}
 
 	if vmc != nil {
-		points, err := importInverterHistory(ctx, kostalHost, historyOffset, vmc)
+		stats, err := importInverterHistory(ctx, kostalHost, historyOffset, vmc)
 		if err != nil {
 			logger.Error("history import", "err", err)
 		} else {
-			logger.Info("history import complete", "points", points, "timestampOffset", historyOffset)
+			logger.Info("history import complete",
+				"points", stats.total(),
+				"tenMinuteSamples", stats.tenMinute,
+				"dailyAvgSamples", stats.daily,
+				"monthlyAvgSamples", stats.monthly,
+				"timestampOffset", historyOffset)
 		}
 	}
 

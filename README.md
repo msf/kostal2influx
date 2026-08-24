@@ -10,46 +10,58 @@ Set `VM_HOST` to write directly to VictoriaMetrics. `VM_PORT` defaults to `8428`
 
 ### Startup history backfill
 
-When VictoriaMetrics is enabled, startup backfills the inverter's rolling 31-day history at its native 10-minute resolution:
+When VictoriaMetrics is enabled, startup fetches `/yields.json?total=0` once and
+backfills whatever the inverter still remembers, best resolution first. Every tier
+writes the same four metrics — `kostal_AC_Power_W`, `kostal_grid_consumed_watts`,
+`kostal_grid_injected_watts`, `kostal_own_consumed_watts` — in watts, and is
+identified by a `source` label:
 
-1. Fetch `/yields.json?day=1` once.
-2. Query VictoriaMetrics once per dashboard metric to find empty 10-minute buckets.
-3. Submit one bulk import containing only completed, empty buckets.
+| `source` | from | covers | resolution |
+| --- | --- | --- | --- |
+| *(absent)* | live `measurements.xml` polling | now | 5s |
+| `history_10m_avg` | `DayCurves` | rolling 31 days | 10-minute average power |
+| `history_daily_avg` | `MonthCurves` | rolling 13 months | one day's energy as flat average power |
+| `history_monthly_avg` | `YearCurves` | up to 20 years | one month's energy as flat average power |
 
-Backfilled samples keep the existing metric names and add `source="history_10m_avg"`. The metrics are `kostal_AC_Power_W`, `kostal_grid_consumed_watts`, `kostal_grid_injected_watts`, and `kostal_own_consumed_watts`. Existing real-time samples have no `source` label.
+The two low-resolution tiers only fill calendar days VictoriaMetrics holds *no*
+sample for, and `history_10m_avg` only fills 10-minute buckets no real-time sample
+landed in, so energy is never counted twice. Days with zero yield are skipped, so a
+genuine outage stays a visible gap.
 
-Set `HISTORY_OFFSET` to a Go duration such as `1h5m` when the inverter clock differs from UTC. Repeated imports require VictoriaMetrics exact-timestamp deduplication (`-dedup.minScrapeInterval=1ms`). Lower-resolution daily, monthly, and yearly history is intentionally not imported yet.
+A day's energy is written as 24 hourly samples of constant average power (`Wh / 24`).
+That is deliberately lossy in shape but exact in total: the dashboards' hourly
+integration `sum_over_time(avg_over_time(x[1h])[1d:1h])` reproduces the inverter's
+own daily figure to the watt-hour.
 
-#### Grafana query change
+Set `HISTORY_OFFSET` to a Go duration such as `1h5m` when the inverter clock differs
+from UTC. Repeated imports require VictoriaMetrics exact-timestamp deduplication
+(`-dedup.minScrapeInterval=1ms`).
 
-The current VictoriaMetrics dashboard is [`grafana-dashboard.json`](grafana-dashboard.json). The extra `source` label creates a second Prometheus series. Aggregate it away so real-time and backfilled buckets render as one series. Change every direct selector from:
+#### Grafana queries
 
-```promql
-kostal_own_consumed_watts
-```
-
-to:
+The dashboards live in [`dashboards/`](dashboards). The `source` label makes each
+backfill tier its own Prometheus series, so aggregate it away to render one line:
 
 ```promql
 sum without (source) (kostal_own_consumed_watts)
-```
 
-Apply the same outer aggregation to range expressions. For example:
-
-```promql
 sum without (source) (
   sum_over_time(avg_over_time(kostal_grid_consumed_watts[1h])[$__interval:1h])
 )
 ```
 
-The importer writes history only where the corresponding real-time 10-minute bucket is empty, so this aggregation does not double-count overlapping data.
+The "Sample provenance" panel on each dashboard keeps the tiers visible:
+
+```promql
+clamp_max(count_over_time(kostal_AC_Power_W{source="history_daily_avg"}[$__interval]), 1)
+```
 
 ## Container
 
-The latest published container image is [`ghcr.io/msf/kostal2influx:v0.4`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
+The latest published container image is [`ghcr.io/msf/kostal2influx:v0.5`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
 
 ```sh
-docker pull ghcr.io/msf/kostal2influx:v0.4
+docker pull ghcr.io/msf/kostal2influx:v0.5
 ```
 
 ## How it gets data from Kostal Inverter PIKO 4.6-2 MP plus

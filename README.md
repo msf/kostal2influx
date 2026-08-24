@@ -1,5 +1,20 @@
 # kostal2influx
-extract metrics from kostal inverter for PV Solar and submit them to InfluxDB
+
+Extract metrics from a Kostal PV inverter and write them directly to VictoriaMetrics or InfluxDB v2.
+
+Repositories: [GitHub](https://github.com/msf/kostal2influx) · [Codeberg mirror](https://codeberg.org/mfilipe/kostal2influx)
+
+## VictoriaMetrics
+
+Set `VM_HOST` to write directly to VictoriaMetrics. `VM_PORT` defaults to `8428`, and `VM_TOKEN` optionally sets a bearer token. InfluxDB writes are disabled by default; set `INFLUX_ENABLED=true` to use InfluxDB alone or alongside VictoriaMetrics.
+
+## Container
+
+The latest published container image is [`ghcr.io/msf/kostal2influx:v0.4`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
+
+```sh
+docker pull ghcr.io/msf/kostal2influx:v0.4
+```
 
 ## How it gets data from Kostal Inverter PIKO 4.6-2 MP plus
 

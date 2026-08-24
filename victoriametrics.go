@@ -23,6 +23,7 @@ type vmConfig struct {
 
 // vmClient is a long-lived writer to a VictoriaMetrics import endpoint.
 type vmClient struct {
+	baseURL string
 	url     string
 	token   string
 	retries int
@@ -35,8 +36,10 @@ func newVMClient(cfg vmConfig, logger *slog.Logger) *vmClient {
 	if port == "" {
 		port = "8428"
 	}
+	baseURL := fmt.Sprintf("http://%s:%s", cfg.host, port)
 	return &vmClient{
-		url:     fmt.Sprintf("http://%s:%s/api/v1/import/prometheus", cfg.host, port),
+		baseURL: baseURL,
+		url:     baseURL + "/api/v1/import/prometheus",
 		token:   cfg.token,
 		retries: cfg.retries,
 		http:    &http.Client{Timeout: cfg.timeout},

@@ -142,7 +142,7 @@ func TestBuildMissingDayPointsReproducesInverterEnergy(t *testing.T) {
 
 	covered := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Contains(t, r.URL.Query().Get("query"), `sum(count_over_time({__name__=~"(kostal_AC_Power_W|`)
+		require.Equal(t, `count_over_time(kostal_AC_Power_W{device="dev"}[1d])`, r.URL.Query().Get("query"))
 		require.Equal(t, "1d", r.URL.Query().Get("step"))
 		require.Equal(t, "1", r.URL.Query().Get("nocache"), "step alignment would shift the probe")
 		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[%d,"17280"]]}]}}`,

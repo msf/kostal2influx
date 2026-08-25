@@ -504,30 +504,39 @@ func (c *vmClient) existingBuckets(ctx context.Context, metric, device string, f
 	return nonEmptyBuckets(series, halfBucket.Milliseconds()), nil
 }
 
-// coveredDays reports which calendar days already hold at least one sample of
-// any dashboard metric, real-time or backfilled.
+// coverageMetric stands in for all four dashboard metrics when probing which
+// days hold data. The live path writes it for every reading, while the derived
+// power metrics are skipped whenever a reading is inconsistent, so it is the
+// most complete indicator. Probing one metric also keeps __name__ on the result
+// and quarters the amount of raw data VictoriaMetrics has to unpack.
+const coverageMetric = "kostal_AC_Power_W"
+
+// maxCoverageWindow bounds one coverage query. count_over_time unpacks every raw
+// sample in the range, and at a 5-second cadence a multi-year span blows past
+// VictoriaMetrics' -search.maxSamplesPerSeries limit of 30M. 180 days is ~3M,
+// leaving room for a faster poll interval.
+const maxCoverageWindow = 180 * 24 * time.Hour
+
+// coveredDays reports which calendar days already hold at least one sample,
+// real-time or backfilled.
 func (c *vmClient) coveredDays(ctx context.Context, device string, first, last time.Time) (map[int64]bool, error) {
 	const day = 24 * time.Hour
-	// sum() collapses the per-metric results: count_over_time drops __name__, so
-	// without it the four metrics become identical label sets and VictoriaMetrics
-	// rejects the query as duplicate output timeseries.
-	query := fmt.Sprintf("sum(count_over_time({__name__=~%q,device=%q}[1d]))", "("+joinMetricNames(historyMetricNames)+")", device)
-	series, err := c.queryRange(ctx, query, first.Add(day).UnixMilli(), last.Add(day).UnixMilli(), "1d")
-	if err != nil {
-		return nil, err
-	}
-	return nonEmptyBuckets(series, day.Milliseconds()), nil
-}
-
-func joinMetricNames(names []string) string {
-	joined := ""
-	for i, name := range names {
-		if i > 0 {
-			joined += "|"
+	query := fmt.Sprintf("count_over_time(%s{device=%q}[1d])", coverageMetric, device)
+	covered := make(map[int64]bool)
+	for start := first; !start.After(last); start = start.Add(maxCoverageWindow) {
+		end := start.Add(maxCoverageWindow - day)
+		if end.After(last) {
+			end = last
 		}
-		joined += name
+		series, err := c.queryRange(ctx, query, start.Add(day).UnixMilli(), end.Add(day).UnixMilli(), "1d")
+		if err != nil {
+			return nil, err
+		}
+		for timestamp := range nonEmptyBuckets(series, day.Milliseconds()) {
+			covered[timestamp] = true
+		}
 	}
-	return joined
+	return covered, nil
 }
 
 type rangeSeries struct {

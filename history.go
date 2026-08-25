@@ -489,9 +489,14 @@ func postHistoryPoints(ctx context.Context, vmc *vmClient, device string, points
 	return flush()
 }
 
+// existingBuckets reports which 10-minute buckets already hold a sample from any
+// tier. Backfilled buckets count as taken: re-importing them would be pointless
+// when the clock correction is unchanged, and actively harmful when it is not,
+// since the same reading would land twice a correction apart. Re-importing a
+// tier therefore means deleting its series first.
 func (c *vmClient) existingBuckets(ctx context.Context, metric, device string, firstTimestamp, lastTimestamp int64) (map[int64]bool, error) {
 	const halfBucket = 5 * time.Minute
-	query := fmt.Sprintf("count_over_time(%s{device=%q,source=\"\"}[10m])", metric, device)
+	query := fmt.Sprintf("count_over_time(%s{device=%q}[10m])", metric, device)
 	series, err := c.queryRange(ctx, query, firstTimestamp+halfBucket.Milliseconds(), lastTimestamp+halfBucket.Milliseconds(), "10m")
 	if err != nil {
 		return nil, err

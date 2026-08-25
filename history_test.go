@@ -66,7 +66,7 @@ func TestExistingBuckets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/v1/query_range", r.URL.Path)
 		require.Equal(t, "Bearer tok", r.Header.Get("Authorization"))
-		require.Equal(t, `count_over_time(kostal_AC_Power_W{device="dev",source=""}[10m])`, r.URL.Query().Get("query"))
+		require.Equal(t, `count_over_time(kostal_AC_Power_W{device="dev"}[10m])`, r.URL.Query().Get("query"))
 		require.Equal(t, strconv.FormatInt(first+(5*time.Minute).Milliseconds(), 10), r.URL.Query().Get("start"))
 		require.Equal(t, "10m", r.URL.Query().Get("step"))
 		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[%v,"3"],[%v,"0"]]}]}}`,

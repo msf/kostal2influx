@@ -23,9 +23,15 @@ identified by a `source` label:
 | `history_daily_avg` | `MonthCurves` | rolling 13 months | one day's energy as flat average power |
 | `history_monthly_avg` | `YearCurves` | up to 20 years | one month's energy as flat average power |
 
-The two low-resolution tiers only fill calendar days VictoriaMetrics holds *no*
-sample for, and `history_10m_avg` only fills 10-minute buckets no real-time sample
-landed in, so energy is never counted twice. Days with zero yield are skipped, so a
+Every tier only fills gaps: the low-resolution ones skip calendar days that already
+hold any sample, and `history_10m_avg` skips 10-minute buckets that already hold
+one. Energy is therefore never counted twice, and restarting the daemon is cheap
+and idempotent. Re-importing a tier means deleting its series first:
+
+```sh
+curl -X POST --data-urlencode 'match[]={source=~"history_.*"}' \
+  http://victoriametrics:8428/api/v1/admin/tsdb/delete_series
+``` Days with zero yield are skipped, so a
 genuine outage stays a visible gap.
 
 A day's energy is written as 24 hourly samples of constant average power (`Wh / 24`).
@@ -65,10 +71,10 @@ clamp_max(count_over_time(kostal_AC_Power_W{source="history_daily_avg"}[$__inter
 
 ## Container
 
-The latest published container image is [`ghcr.io/msf/kostal2influx:v0.6`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
+The latest published container image is [`ghcr.io/msf/kostal2influx:v0.7`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
 
 ```sh
-docker pull ghcr.io/msf/kostal2influx:v0.6
+docker pull ghcr.io/msf/kostal2influx:v0.7
 ```
 
 ## How it gets data from Kostal Inverter PIKO 4.6-2 MP plus

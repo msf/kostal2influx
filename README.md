@@ -33,8 +33,15 @@ That is deliberately lossy in shape but exact in total: the dashboards' hourly
 integration `sum_over_time(avg_over_time(x[1h])[1d:1h])` reproduces the inverter's
 own daily figure to the watt-hour.
 
-Set `HISTORY_OFFSET` to a Go duration such as `1h5m` when the inverter clock differs
-from UTC. Repeated imports require VictoriaMetrics exact-timestamp deduplication
+#### Inverter clock correction
+
+These inverters have no NTP: the clock sits at an arbitrary offset from UTC and
+free-runs from there (mine is 65 minutes slow). History timestamps are in that
+clock, so they are useless until corrected. `HISTORY_OFFSET` defaults to `auto`,
+which measures `now - measurements.xml DateTime` at every import and rounds it to
+the curve's 10-minute bucket. Pin a Go duration such as `1h5m` to override.
+
+Repeated imports require VictoriaMetrics exact-timestamp deduplication
 (`-dedup.minScrapeInterval=1ms`).
 
 #### Grafana queries
@@ -58,10 +65,10 @@ clamp_max(count_over_time(kostal_AC_Power_W{source="history_daily_avg"}[$__inter
 
 ## Container
 
-The latest published container image is [`ghcr.io/msf/kostal2influx:v0.5`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
+The latest published container image is [`ghcr.io/msf/kostal2influx:v0.6`](https://github.com/users/msf/packages/container/package/kostal2influx); `ghcr.io/msf/kostal2influx:latest` currently points to the same image.
 
 ```sh
-docker pull ghcr.io/msf/kostal2influx:v0.5
+docker pull ghcr.io/msf/kostal2influx:v0.6
 ```
 
 ## How it gets data from Kostal Inverter PIKO 4.6-2 MP plus

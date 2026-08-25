@@ -198,3 +198,13 @@ func TestBuildDayEnergyCandidatesFromInverterSample(t *testing.T) {
 	require.NotContains(t, candidates, time.Date(2021, 12, 10, 0, 0, 0, 0, time.UTC),
 		"still detailed by DayCurves")
 }
+
+func TestClockCorrection(t *testing.T) {
+	// The real inverter runs 3928s behind UTC; snap that onto its 10-minute grid.
+	device := time.Date(2026, 8, 24, 23, 2, 16, 0, time.UTC)
+	now := device.Add(3928 * time.Second)
+	require.Equal(t, 70*time.Minute, clockCorrection(device, now, 10*time.Minute))
+	require.Equal(t, 70*time.Minute, clockCorrection(device, now, 0), "falls back to 10m")
+	require.Equal(t, time.Duration(0), clockCorrection(device, device.Add(2*time.Minute), 10*time.Minute))
+	require.Equal(t, -10*time.Minute, clockCorrection(device, device.Add(-8*time.Minute), 10*time.Minute), "inverter ahead of UTC")
+}

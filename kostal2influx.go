@@ -151,7 +151,7 @@ func main() {
 		vmToken       string
 		vmTimeout     int
 		vmRetries     int
-		historyOffset time.Duration
+		historyOffset string
 		sleepSecs     int
 	)
 	flag.StringVar(&kostalHost, "kostalHost", "192.168.0.11", "hostname or IP of kostal inversor")
@@ -164,18 +164,19 @@ func main() {
 	flag.StringVar(&vmToken, "vmToken", "", "VictoriaMetrics Bearer token (or VM_TOKEN env)")
 	flag.IntVar(&vmTimeout, "vmTimeout", 10, "VictoriaMetrics HTTP timeout in seconds")
 	flag.IntVar(&vmRetries, "vmRetries", 3, "VictoriaMetrics write retries")
-	flag.DurationVar(&historyOffset, "historyOffset", 0, "offset added to inverter history timestamps, for clock correction")
+	flag.StringVar(&historyOffset, "historyOffset", "auto", `clock correction added to inverter history timestamps: "auto" measures it against the inverter clock, or pin a Go duration such as 1h5m`)
 	flag.IntVar(&sleepSecs, "sleep_secs", 5, "sleep time")
 	flag.Parse()
 
 	// Environment variables take precedence over flags.
 	for env, dst := range map[string]*string{
-		"INFLUX_TOKEN":  &influxToken,
-		"INFLUX_HOST":   &influxHost,
-		"INFLUX_BUCKET": &influxBucket,
-		"VM_HOST":       &vmHost,
-		"VM_PORT":       &vmPort,
-		"VM_TOKEN":      &vmToken,
+		"INFLUX_TOKEN":   &influxToken,
+		"INFLUX_HOST":    &influxHost,
+		"INFLUX_BUCKET":  &influxBucket,
+		"VM_HOST":        &vmHost,
+		"VM_PORT":        &vmPort,
+		"VM_TOKEN":       &vmToken,
+		"HISTORY_OFFSET": &historyOffset,
 	} {
 		if v := os.Getenv(env); v != "" {
 			*dst = v
@@ -184,13 +185,14 @@ func main() {
 	if v := os.Getenv("INFLUX_ENABLED"); v == "1" || strings.EqualFold(v, "true") {
 		influxEnabled = true
 	}
-	if v := os.Getenv("HISTORY_OFFSET"); v != "" {
-		var err error
-		historyOffset, err = time.ParseDuration(v)
+	var historyOffsetOverride *time.Duration
+	if !strings.EqualFold(historyOffset, "auto") {
+		pinned, err := time.ParseDuration(historyOffset)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: invalid HISTORY_OFFSET %q: %v\n", v, err)
+			fmt.Fprintf(os.Stderr, "Error: invalid historyOffset %q: %v\n", historyOffset, err)
 			os.Exit(1)
 		}
+		historyOffsetOverride = &pinned
 	}
 
 	vmEnabled := vmHost != ""
@@ -243,7 +245,7 @@ func main() {
 	}
 
 	if vmc != nil {
-		stats, err := importInverterHistory(ctx, kostalHost, historyOffset, vmc)
+		stats, err := importInverterHistory(ctx, kostalHost, historyOffsetOverride, vmc)
 		if err != nil {
 			logger.Error("history import", "err", err)
 		} else {
@@ -252,7 +254,8 @@ func main() {
 				"tenMinuteSamples", stats.tenMinute,
 				"dailyAvgSamples", stats.daily,
 				"monthlyAvgSamples", stats.monthly,
-				"timestampOffset", historyOffset)
+				"clockCorrection", stats.offset,
+				"pinned", historyOffsetOverride != nil)
 		}
 	}
 

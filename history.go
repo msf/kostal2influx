@@ -103,6 +103,7 @@ type importStats struct {
 	tenMinute int
 	daily     int
 	monthly   int
+	offset    time.Duration
 }
 
 func (s importStats) total() int { return s.tenMinute + s.daily + s.monthly }
@@ -112,7 +113,7 @@ func (s importStats) total() int { return s.tenMinute + s.daily + s.monthly }
 // 31 days, then per-day averages for the last 13 months, then per-month
 // averages for the remaining years. Lower tiers only fill calendar days that
 // hold no samples at all, so no energy is ever counted twice.
-func importInverterHistory(ctx context.Context, kostalHost string, timestampOffset time.Duration, vmc *vmClient) (importStats, error) {
+func importInverterHistory(ctx context.Context, kostalHost string, offsetOverride *time.Duration, vmc *vmClient) (importStats, error) {
 	var stats importStats
 
 	measurements, err := getMeasurements(kostalHost)
@@ -129,6 +130,12 @@ func importInverterHistory(ctx context.Context, kostalHost string, timestampOffs
 	if err != nil {
 		return stats, err
 	}
+
+	timestampOffset := clockCorrection(deviceTime, time.Now().UTC(), time.Duration(history.DayCurves.IncrementStep)*time.Minute)
+	if offsetOverride != nil {
+		timestampOffset = *offsetOverride
+	}
+	stats.offset = timestampOffset
 
 	tenMinute, err := buildHistoryPoints(history, deviceTime, timestampOffset)
 	if err != nil {
@@ -178,6 +185,17 @@ func getHistory(ctx context.Context, kostalHost string) (*historyResponse, error
 		return nil, fmt.Errorf("decode inverter history: %w", err)
 	}
 	return &history, nil
+}
+
+// clockCorrection maps inverter timestamps onto real UTC. The inverter has no
+// NTP: its clock sits at an arbitrary offset and free-runs from there, so the
+// correction is measured at every import and rounded to the curve's own bucket
+// size to keep backfilled samples on clean boundaries.
+func clockCorrection(deviceTime, now time.Time, step time.Duration) time.Duration {
+	if step <= 0 {
+		step = 10 * time.Minute
+	}
+	return now.Sub(deviceTime).Round(step)
 }
 
 type historyPowerSample struct {

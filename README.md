@@ -8,10 +8,16 @@ Repositories: [GitHub](https://github.com/msf/kostal2influx) · [Codeberg mirror
 
 Set `VM_HOST` to write directly to VictoriaMetrics. `VM_PORT` defaults to `8428`, and `VM_TOKEN` optionally sets a bearer token. InfluxDB writes are disabled by default; set `INFLUX_ENABLED=true` to use InfluxDB alone or alongside VictoriaMetrics.
 
-### Startup history backfill
+### Background history backfill
 
-When VictoriaMetrics is enabled, startup fetches `/yields.json?total=0` once and
-backfills whatever the inverter still remembers, best resolution first. Every tier
+When VictoriaMetrics is enabled, a background goroutine fetches `/yields.json?total=0`
+and backfills whatever the inverter still remembers, best resolution first. It runs
+beside the scrape loop, never inside it: its own paced VictoriaMetrics client
+(`-historyPace`, default 250ms between requests) and its own long timeouts, so a
+multi-megabyte import can never delay a 5-second reading. It repeats every
+`-historyInterval` (default 6h, `0` runs once, negative disables) because
+`DayCurves` is a rolling 31-day window: a gap left by an outage is only
+recoverable at 10-minute fidelity until it ages out. Every tier
 writes the same four metrics — `kostal_AC_Power_W`, `kostal_grid_consumed_watts`,
 `kostal_grid_injected_watts`, `kostal_own_consumed_watts` — in watts, and is
 identified by a `source` label:
@@ -31,8 +37,9 @@ and idempotent. Re-importing a tier means deleting its series first:
 ```sh
 curl -X POST --data-urlencode 'match[]={source=~"history_.*"}' \
   http://victoriametrics:8428/api/v1/admin/tsdb/delete_series
-``` Days with zero yield are skipped, so a
-genuine outage stays a visible gap.
+```
+
+Days with zero yield are skipped, so a genuine outage stays a visible gap.
 
 A day's energy is written as 24 hourly samples of constant average power (`Wh / 24`).
 That is deliberately lossy in shape but exact in total: the dashboards' hourly
@@ -47,8 +54,15 @@ clock, so they are useless until corrected. `HISTORY_OFFSET` defaults to `auto`,
 which measures `now - measurements.xml DateTime` at every import and rounds it to
 the curve's 10-minute bucket. Pin a Go duration such as `1h5m` to override.
 
-Repeated imports require VictoriaMetrics exact-timestamp deduplication
-(`-dedup.minScrapeInterval=1ms`).
+#### Testing the backfill
+
+`make test-e2e` runs the import three times — fresh, restart, restart with a
+changed clock correction — against a throwaway VictoriaMetrics **seeded with
+live-like data**: 5.5 years of samples with the gaps the real database has, and
+`-search.maxSamplesPerSeries` scaled down to keep the production ratio between a
+coverage probe and the limit. An empty TSDB only exercises the first-import path
+and hides every interesting failure: result alignment, per-series sample limits
+and re-import behaviour all need data that is already there.
 
 #### Grafana queries
 

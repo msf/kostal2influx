@@ -56,8 +56,12 @@ type Root struct {
 	} `xml:"Device"`
 }
 
+// inverterHTTP bounds every measurements.xml read; the inverter's web server is
+// single-threaded and occasionally stops answering mid-request.
+var inverterHTTP = &http.Client{Timeout: 10 * time.Second}
+
 func getMeasurements(kostalHost string) (*Root, error) {
-	resp, err := http.Get("http://" + kostalHost + "/measurements.xml")
+	resp, err := inverterHTTP.Get("http://" + kostalHost + "/measurements.xml")
 	if err != nil {
 		return nil, err
 	}
@@ -141,18 +145,20 @@ func main() {
 	const defaultBucket = "alfeizerao"
 	const org = "casa"
 	var (
-		kostalHost    string
-		influxEnabled bool
-		influxHost    string
-		influxToken   string
-		influxBucket  string
-		vmHost        string
-		vmPort        string
-		vmToken       string
-		vmTimeout     int
-		vmRetries     int
-		historyOffset string
-		sleepSecs     int
+		kostalHost      string
+		influxEnabled   bool
+		influxHost      string
+		influxToken     string
+		influxBucket    string
+		vmHost          string
+		vmPort          string
+		vmToken         string
+		vmTimeout       int
+		vmRetries       int
+		historyOffset   string
+		historyInterval time.Duration
+		historyPace     time.Duration
+		sleepSecs       int
 	)
 	flag.StringVar(&kostalHost, "kostalHost", "192.168.0.11", "hostname or IP of kostal inversor")
 	flag.BoolVar(&influxEnabled, "influx", false, "enable InfluxDB writes (disabled by default; or INFLUX_ENABLED env)")
@@ -165,6 +171,8 @@ func main() {
 	flag.IntVar(&vmTimeout, "vmTimeout", 10, "VictoriaMetrics HTTP timeout in seconds")
 	flag.IntVar(&vmRetries, "vmRetries", 3, "VictoriaMetrics write retries")
 	flag.StringVar(&historyOffset, "historyOffset", "auto", `clock correction added to inverter history timestamps: "auto" measures it against the inverter clock, or pin a Go duration such as 1h5m`)
+	flag.DurationVar(&historyInterval, "historyInterval", 6*time.Hour, "how often the background history backfill runs; 0 runs it once, negative disables it")
+	flag.DurationVar(&historyPace, "historyPace", 250*time.Millisecond, "delay between the backfill's VictoriaMetrics requests, to keep it out of the way of live writes")
 	flag.IntVar(&sleepSecs, "sleep_secs", 5, "sleep time")
 	flag.Parse()
 
@@ -244,19 +252,19 @@ func main() {
 		}, logger)
 	}
 
-	if vmc != nil {
-		stats, err := importInverterHistory(ctx, kostalHost, historyOffsetOverride, vmc)
-		if err != nil {
-			logger.Error("history import", "err", err)
-		} else {
-			logger.Info("history import complete",
-				"points", stats.total(),
-				"tenMinuteSamples", stats.tenMinute,
-				"dailyAvgSamples", stats.daily,
-				"monthlyAvgSamples", stats.monthly,
-				"clockCorrection", stats.offset,
-				"pinned", historyOffsetOverride != nil)
-		}
+	// The backfill runs beside the scrape loop, never inside it: its own paced
+	// client, its own long timeout, its own goroutine.
+	if vmc != nil && historyInterval >= 0 {
+		historyClient := newVMClient(vmConfig{
+			host:    vmHost,
+			port:    vmPort,
+			token:   vmToken,
+			timeout: 5 * time.Minute,
+			retries: vmRetries,
+			pace:    historyPace,
+		}, logger)
+		logger.Info("history backfill enabled", "interval", historyInterval, "pace", historyPace)
+		go backfillHistory(ctx, kostalHost, historyOffsetOverride, historyClient, historyInterval, logger)
 	}
 
 	sleep := time.Duration(sleepSecs) * time.Second

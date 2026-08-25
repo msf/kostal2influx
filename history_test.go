@@ -140,13 +140,17 @@ func TestBuildMissingDayPointsReproducesInverterEnergy(t *testing.T) {
 		"2026-04": {produced, consumed, injected},
 	})}
 
-	covered := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC).Add(24 * time.Hour)
+	// The probe for a day ends 1ms before the next day starts, so it cannot see
+	// that day's first sample; VictoriaMetrics echoes the requested timestamps.
+	covered := time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC).Add(24*time.Hour - probeSkew)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, `count_over_time(kostal_AC_Power_W{device="dev"}[1d])`, r.URL.Query().Get("query"))
 		require.Equal(t, "1d", r.URL.Query().Get("step"))
 		require.Equal(t, "1", r.URL.Query().Get("nocache"), "step alignment would shift the probe")
-		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[%d,"17280"]]}]}}`,
-			covered.Unix())
+		require.Equal(t, strconv.FormatInt(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).Add(24*time.Hour-probeSkew).UnixMilli(), 10),
+			r.URL.Query().Get("start"), "probe must not straddle the day boundary")
+		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[%.3f,"17280"]]}]}}`,
+			float64(covered.UnixMilli())/1000)
 	}))
 	defer srv.Close()
 	client := &vmClient{baseURL: srv.URL, http: srv.Client()}

@@ -6,6 +6,11 @@ all: lint test build
 test: lint
 	go test -timeout=10s -cover -race -bench=. -benchmem ./...
 
+# Backfill against a throwaway VictoriaMetrics seeded with live-like data.
+# Needs docker. An empty TSDB cannot reproduce the failures this catches.
+test-e2e:
+	go test -tags=e2e -timeout=10m -count=1 -run TestBackfillAgainstSeededVictoriaMetrics .
+
 build:
 	# static daemon binary for the container
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-w -s" -o kostal2influx .
@@ -17,6 +22,7 @@ backfill: bin
 lint: bin/golangci-lint
 	go fmt ./...
 	go vet ./...
+	go vet -tags=e2e ./...
 	bin/golangci-lint -c .golangci.yml run ./...
 	go mod tidy
 

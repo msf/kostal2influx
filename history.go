@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"net/url"
@@ -107,6 +108,44 @@ type importStats struct {
 }
 
 func (s importStats) total() int { return s.tenMinute + s.daily + s.monthly }
+
+// backfillHistory keeps the history import off the live scraping path. It runs
+// in its own goroutine against its own paced VictoriaMetrics client, so a slow
+// inverter, a multi-megabyte import or a failing probe can never delay or drop
+// a 5-second reading. Repeating matters: the 10-minute curves are a rolling
+// 31-day window, so a gap left by an outage is only recoverable at full
+// fidelity until it ages out.
+func backfillHistory(ctx context.Context, kostalHost string, offsetOverride *time.Duration, vmc *vmClient, interval time.Duration, logger *slog.Logger) {
+	for {
+		start := time.Now()
+		stats, err := importInverterHistory(ctx, kostalHost, offsetOverride, vmc)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case err != nil:
+			logger.Error("history import", "err", err, "took", time.Since(start).Round(time.Second))
+		default:
+			logger.Info("history import complete",
+				"points", stats.total(),
+				"tenMinuteSamples", stats.tenMinute,
+				"dailyAvgSamples", stats.daily,
+				"monthlyAvgSamples", stats.monthly,
+				"clockCorrection", stats.offset,
+				"pinned", offsetOverride != nil,
+				"took", time.Since(start).Round(time.Second))
+		}
+		if interval <= 0 {
+			return
+		}
+		timer := time.NewTimer(interval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
 
 // importInverterHistory backfills VictoriaMetrics from the inverter's own
 // history, best resolution first: 10-minute average power for the rolling
@@ -517,8 +556,15 @@ const coverageMetric = "kostal_AC_Power_W"
 // leaving room for a faster poll interval.
 const maxCoverageWindow = 180 * 24 * time.Hour
 
+// probeSkew shifts a coverage probe off the sample it must not see. Range
+// windows are half-open — count_over_time(x[1d]) at t spans (t-1d, t] — so
+// probing a day at its exact end would count the *next* day's first sample and
+// declare an empty day covered, leaving the gap unfillable forever.
+const probeSkew = time.Millisecond
+
 // coveredDays reports which calendar days already hold at least one sample,
-// real-time or backfilled.
+// real-time or backfilled. Days are keyed by their start, which is midnight
+// inverter time plus the clock correction.
 func (c *vmClient) coveredDays(ctx context.Context, device string, first, last time.Time) (map[int64]bool, error) {
 	const day = 24 * time.Hour
 	query := fmt.Sprintf("count_over_time(%s{device=%q}[1d])", coverageMetric, device)
@@ -528,12 +574,12 @@ func (c *vmClient) coveredDays(ctx context.Context, device string, first, last t
 		if end.After(last) {
 			end = last
 		}
-		series, err := c.queryRange(ctx, query, start.Add(day).UnixMilli(), end.Add(day).UnixMilli(), "1d")
+		series, err := c.queryRange(ctx, query, start.Add(day-probeSkew).UnixMilli(), end.Add(day-probeSkew).UnixMilli(), "1d")
 		if err != nil {
 			return nil, err
 		}
 		for timestamp := range nonEmptyBuckets(series, day.Milliseconds()) {
-			covered[timestamp] = true
+			covered[timestamp+probeSkew.Milliseconds()] = true
 		}
 	}
 	return covered, nil
@@ -544,6 +590,9 @@ type rangeSeries struct {
 }
 
 func (c *vmClient) queryRange(ctx context.Context, query string, startMillis, endMillis int64, step string) ([]rangeSeries, error) {
+	if err := c.waitPace(ctx); err != nil {
+		return nil, err
+	}
 	endpoint, err := url.Parse(c.baseURL + "/api/v1/query_range")
 	if err != nil {
 		return nil, err

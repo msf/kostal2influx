@@ -19,6 +19,9 @@ type vmConfig struct {
 	token   string
 	timeout time.Duration
 	retries int
+	// pace delays every request. The backfill uses its own paced client so a
+	// multi-megabyte import never competes with the live 5-second writes.
+	pace time.Duration
 }
 
 // vmClient is a long-lived writer to a VictoriaMetrics import endpoint.
@@ -27,6 +30,7 @@ type vmClient struct {
 	url     string
 	token   string
 	retries int
+	pace    time.Duration
 	http    *http.Client
 	logger  *slog.Logger
 }
@@ -42,6 +46,7 @@ func newVMClient(cfg vmConfig, logger *slog.Logger) *vmClient {
 		url:     baseURL + "/api/v1/import/prometheus",
 		token:   cfg.token,
 		retries: cfg.retries,
+		pace:    cfg.pace,
 		http:    &http.Client{Timeout: cfg.timeout},
 		logger:  logger,
 	}
@@ -72,6 +77,9 @@ func buildVMPayload(stats *Root, power kostalPower, now time.Time) []byte {
 // PostMetrics submits a prebuilt payload, retrying with linear backoff. It drains
 // and closes each response body so the keep-alive connection can be reused.
 func (c *vmClient) PostMetrics(ctx context.Context, payload []byte) error {
+	if err := c.waitPace(ctx); err != nil {
+		return err
+	}
 	var lastErr error
 	for attempt := 0; attempt <= c.retries; attempt++ {
 		if attempt > 0 {
@@ -106,6 +114,22 @@ func (c *vmClient) PostMetrics(ctx context.Context, payload []byte) error {
 		return nil
 	}
 	return fmt.Errorf("victoriametrics write failed after %d attempts: %w", c.retries+1, lastErr)
+}
+
+// waitPace throttles a client that is deliberately slow, and doubles as the
+// cancellation check for long backfill loops.
+func (c *vmClient) waitPace(ctx context.Context) error {
+	if c.pace <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(c.pace)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 var invalidMetricChars = regexp.MustCompile(`[^a-zA-Z0-9_:]`)

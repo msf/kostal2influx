@@ -508,7 +508,10 @@ func (c *vmClient) existingBuckets(ctx context.Context, metric, device string, f
 // any dashboard metric, real-time or backfilled.
 func (c *vmClient) coveredDays(ctx context.Context, device string, first, last time.Time) (map[int64]bool, error) {
 	const day = 24 * time.Hour
-	query := fmt.Sprintf("count_over_time({__name__=~%q,device=%q}[1d])", "("+joinMetricNames(historyMetricNames)+")", device)
+	// sum() collapses the per-metric results: count_over_time drops __name__, so
+	// without it the four metrics become identical label sets and VictoriaMetrics
+	// rejects the query as duplicate output timeseries.
+	query := fmt.Sprintf("sum(count_over_time({__name__=~%q,device=%q}[1d]))", "("+joinMetricNames(historyMetricNames)+")", device)
 	series, err := c.queryRange(ctx, query, first.Add(day).UnixMilli(), last.Add(day).UnixMilli(), "1d")
 	if err != nil {
 		return nil, err
@@ -541,6 +544,11 @@ func (c *vmClient) queryRange(ctx context.Context, query string, startMillis, en
 	params.Set("start", strconv.FormatInt(startMillis, 10))
 	params.Set("end", strconv.FormatInt(endMillis, 10))
 	params.Set("step", step)
+	// Coverage probes evaluate deliberately off the step boundary — mid-bucket for
+	// 10-minute buckets, day-start plus the clock correction for days. Once a range
+	// is long enough to be cache-eligible VictoriaMetrics silently rounds start down
+	// to a step multiple, which shifts every point and makes the results unmappable.
+	params.Set("nocache", "1")
 	endpoint.RawQuery = params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
